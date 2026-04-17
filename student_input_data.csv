@@ -1,0 +1,6 @@
+Student_ID,Student_Name,Class,Section,Physics_Marks,Chemistry_Marks,Math_Marks,Attendance_Percentage,Homework_Completion_Percentage,Parent_Email,Teacher_Email,Phone_Number
+1,Aman,11,A,52,61,48,72,65,parent1@example.com,teacher1@example.com,9000000001
+2,Bhavna,11,A,81,77,85,91,88,parent2@example.com,teacher1@example.com,9000000002
+3,Charu,12,B,43,58,46,69,55,parent3@example.com,teacher2@example.com,9000000003
+4,Dev,12,B,66,64,62,79,74,parent4@example.com,teacher2@example.com,9000000004
+5,Eshan,10,C,35,42,39,61,50,parent5@example.com,teacher3@example.com,9000000005

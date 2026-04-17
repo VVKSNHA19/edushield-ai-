@@ -1,0 +1,147 @@
+{
+  "name": "AI Student Dashboard Webhook API",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "student-dashboard-api",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        260,
+        300
+      ],
+      "webhookId": "student-dashboard-api"
+    },
+    {
+      "parameters": {
+        "jsCode": "function toNumber(value, fallback = 0) {\n  if (value === null || value === undefined || value === '') return fallback;\n  const num = Number(value);\n  return Number.isFinite(num) ? num : fallback;\n}\n\nfunction round2(value) {\n  return Math.round((value + Number.EPSILON) * 100) / 100;\n}\n\nconst body = $json.body ?? $json;\nlet students = [];\n\nif (Array.isArray(body)) {\n  students = body;\n} else if (Array.isArray(body.students)) {\n  students = body.students;\n} else if (Array.isArray(body.data)) {\n  students = body.data;\n} else {\n  throw new Error(\"Expected payload format: { \\\"students\\\": [ ... ] }\");\n}\n\nconst processed = students.map((row, index) => {\n  const studentId = row.Student_ID ?? row.student_id ?? row.id ?? index + 1;\n  const studentName = row.Student_Name ?? row.student_name ?? row.name ?? `Student ${index + 1}`;\n  const className = row.Class ?? row.class ?? '';\n  const section = row.Section ?? row.section ?? '';\n  const physics = toNumber(row.Physics_Marks ?? row.physics ?? row.physics_marks);\n  const chemistry = toNumber(row.Chemistry_Marks ?? row.chemistry ?? row.chemistry_marks);\n  const math = toNumber(row.Math_Marks ?? row.math ?? row.math_marks);\n  const attendance = toNumber(row.Attendance_Percentage ?? row.attendance ?? row.attendance_percentage);\n  const homework = toNumber(row.Homework_Completion_Percentage ?? row.homework ?? row.homework_completion_percentage);\n  const parentEmail = row.Parent_Email ?? row.parent_email ?? '';\n  const teacherEmail = row.Teacher_Email ?? row.teacher_email ?? '';\n  const phoneNumber = row.Phone_Number ?? row.phone_number ?? '';\n\n  const averageMarks = round2((physics + chemistry + math) / 3);\n  const marksRisk = round2(100 - averageMarks);\n  const attendanceRisk = round2(100 - attendance);\n  const homeworkRisk = round2(100 - homework);\n\n  const riskScore = round2((0.5 * marksRisk) + (0.3 * attendanceRisk) + (0.2 * homeworkRisk));\n\n  let riskCategory = \"Low Risk\";\n  if (riskScore >= 40) {\n    riskCategory = \"High Risk\";\n  } else if (riskScore >= 25) {\n    riskCategory = \"Medium Risk\";\n  }\n\n  const subjects = [\n    { name: \"Physics\", score: physics },\n    { name: \"Chemistry\", score: chemistry },\n    { name: \"Math\", score: math }\n  ].sort((a, b) => a.score - b.score);\n\n  const weakSubject = subjects[0].name;\n  const weakSubjectScore = round2(subjects[0].score);\n\n  const suggestions = [];\n  if (averageMarks < 60) suggestions.push(\"Improve overall subject performance with a focused weekly study plan.\");\n  if (attendance < 75) suggestions.push(\"Improve attendance to avoid concept gaps and missed classroom practice.\");\n  if (homework < 70) suggestions.push(\"Complete homework regularly to strengthen revision and retention.\");\n  if (weakSubjectScore < 50) suggestions.push(`Give extra practice in ${weakSubject} and schedule targeted doubt-solving.`);\n  if (riskScore >= 40) suggestions.push(\"Teacher intervention recommended this week with parent follow-up.\");\n  if (suggestions.length === 0) suggestions.push(\"Student is stable. Continue current learning routine.\");\n\n  return {\n    Student_ID: studentId,\n    Student_Name: studentName,\n    Class: className,\n    Section: section,\n    Physics_Marks: physics,\n    Chemistry_Marks: chemistry,\n    Math_Marks: math,\n    Attendance_Percentage: attendance,\n    Homework_Completion_Percentage: homework,\n    Parent_Email: parentEmail,\n    Teacher_Email: teacherEmail,\n    Phone_Number: phoneNumber,\n    Average_Marks: averageMarks,\n    Marks_Risk: marksRisk,\n    Attendance_Risk: attendanceRisk,\n    Homework_Risk: homeworkRisk,\n    Risk_Score: riskScore,\n    Risk_Category: riskCategory,\n    Weak_Subject: weakSubject,\n    Suggestion: suggestions.join(\" \"),\n  };\n});\n\nconst teacherAlertList = processed\n  .filter(s => s.Risk_Category === \"High Risk\")\n  .sort((a, b) => b.Risk_Score - a.Risk_Score)\n  .map(s => ({\n    Student_ID: s.Student_ID,\n    Student_Name: s.Student_Name,\n    Class: s.Class,\n    Section: s.Section,\n    Risk_Score: s.Risk_Score,\n    Weak_Subject: s.Weak_Subject,\n    Teacher_Email: s.Teacher_Email,\n    Parent_Email: s.Parent_Email,\n    Suggestion: s.Suggestion,\n  }));\n\nconst summary = {\n  total_students: processed.length,\n  high_risk_count: processed.filter(s => s.Risk_Category === \"High Risk\").length,\n  medium_risk_count: processed.filter(s => s.Risk_Category === \"Medium Risk\").length,\n  low_risk_count: processed.filter(s => s.Risk_Category === \"Low Risk\").length,\n};\n\nreturn [{\n  json: {\n    success: true,\n    summary,\n    teacher_alert_list: teacherAlertList,\n    all_students_processed: processed\n  }\n}];\n"
+      },
+      "id": "2",
+      "name": "Process Student Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.summary.high_risk_count }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "3",
+      "name": "Any High Risk?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        820,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const teacherAlertList = $json.teacher_alert_list || [];\nconst lines = teacherAlertList.map((s, i) =>\n  `${i + 1}. ${s.Student_Name} | Risk Score: ${s.Risk_Score} | Weak Subject: ${s.Weak_Subject} | Teacher: ${s.Teacher_Email || 'N/A'}`\n);\n\nreturn [{\n  json: {\n    ...$json,\n    email_subject: `High Risk Student Alert (${teacherAlertList.length} students)`,\n    email_body: [\n      \"Dummy alert generated by n8n.\",\n      \"\",\n      \"High risk students:\",\n      ...lines\n    ].join(\"\\n\")\n  }\n}];\n"
+      },
+      "id": "4",
+      "name": "Build Dummy Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1080,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "5",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1340,
+        300
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Process Student Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Student Data": {
+      "main": [
+        [
+          {
+            "node": "Any High Risk?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any High Risk?": {
+      "main": [
+        [
+          {
+            "node": "Build Dummy Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Dummy Alert": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}
